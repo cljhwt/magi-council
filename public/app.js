@@ -2,7 +2,18 @@ const $ = id => document.getElementById(id);
 const roles = [ ['MELCHIOR','01','科学家','证据 · 逻辑 · 可行性'], ['BALTHASAR','02','守护者','影响 · 风险 · 长期'], ['CASPER','03','自我','意愿 · 自主 · 价值'] ];
 const names = { APPROVE:'赞成', REJECT:'反对', ABSTAIN:'弃权' };
 const verdicts = { APPROVED:'提案通过', REJECTED:'提案否决', DEFERRED:'暂缓决定', INCOMPLETE:'讨论不完整' };
-let busy = false, controller, lastResult, calls = 0, tokens = 0;
+let busy = false, controller, lastResult, calls = 0, tokens = 0, checking = false, returnToProposal = false;
+function showProposalFeedback(message, needsConfig = false) {
+  $('proposalFeedback').hidden=false;$('proposalError').textContent=message;
+  $('configureFromProposal').hidden=!needsConfig;
+  $('status').textContent=message;
+  if(!$('proposalDialog').open && !$('settings').open && !$('detailsDialog').open)$('proposalDialog').showModal();
+}
+function readableError(error) {
+  if(error.name==='TimeoutError')return '连接超时。请检查本机服务、模型 API 地址和网络后重试。';
+  if(error instanceof TypeError)return '无法连接 MAGI 本机服务。请确认服务正在运行，然后刷新页面重试。';
+  return error.message;
+}
 function element(tag, text, className) { const el = document.createElement(tag); if (text !== undefined) el.textContent = text; if (className) el.className = className; return el; }
 function resetAgents() {
   $('agents').replaceChildren();
@@ -17,6 +28,7 @@ function resetAgents() {
 function setBusy(value) {
   busy = value; for (const id of ['startBtn','demoBtn','proposal','rule']) $(id).disabled = value;
   $('cancelBtn').hidden = !value;
+  $('demoFromProposal').disabled=value;
 }
 function showOpinion(id, opinion, phase) {
   $(`core-${id}`).dataset.vote=opinion.vote;$(`core-${id}`).dataset.state='done';
@@ -32,6 +44,7 @@ function handle(event) {
   if(event.type==='agent.started')$(`core-${event.role}`).dataset.state='busy';
   if(event.type==='agent.failed')$(`core-${event.role}`).dataset.state='failed';
   if (event.type === 'agent.started') { const card=$(event.role); card.dataset.state='busy';card.querySelector('.badge').textContent=event.phase==='review'?'互评中…':'独立评估中…';$('phaseLabel').textContent=event.phase==='review'?'ROUND 02 / PEER REVIEW':'ROUND 01 / INDEPENDENT'; }
+  if (event.type === 'agent.started')$('status').textContent=`${event.role} 正在${event.phase==='review'?'复核三方意见':'独立评估提案'}，单次请求最多等待 60 秒。`;
   if (event.type === 'agent.completed') showOpinion(event.role,event.opinion,event.phase);
   if (event.type === 'agent.failed') { const card=$(event.role);card.dataset.state='failed';card.querySelector('.badge').textContent='故障';card.querySelector('.empty')?.remove();card.append(element('p',event.error,'opinion')); }
   if (event.type === 'usage') { calls++; tokens += event.usage?.total_tokens || 0; $('usage').textContent=`${calls} 次调用${tokens ? ` / ${tokens} tokens` : ''}`; }
@@ -47,19 +60,31 @@ function renderResult(result) {
   $('minority').replaceChildren(element('p','各方意见与下一步'));
   result.opinions.forEach((o,i)=>$('minority').append(element('p',`${roles[i][0]} · ${o ? `${names[o.vote]}：${o.condition}` : '没有有效终票，请检查配置后重新运行。'}`)));
   $('phaseLabel').textContent='SESSION COMPLETE';$('status').textContent=result.demo?'回放结束。以上是固定脚本，不是对输入问题的实时回答。':'讨论结束。可以展开各方依据，或导出本次结果。';
+  if(result.verdict==='INCOMPLETE'){
+    $('status').textContent='讨论未完成。有单元调用失败，请在意见详情中查看错误原因。';
+    if(!$('settings').open && !$('proposalDialog').open && !$('detailsDialog').open)$('detailsDialog').showModal();
+  }
 }
-async function api(path, options={}) { const response=await fetch(path,options);const data=await response.json();if(!response.ok)throw new Error(data.error||'请求失败');return data; }
+async function api(path, options={}) { const response=await fetch(path,{...options,signal:options.signal??AbortSignal.timeout(path==='/api/test'?65000:10000)});const data=await response.json();if(!response.ok)throw new Error(data.error||'请求失败');return data; }
 function begin(mode) { $('proposalDialog').close();$('detailsDialog').close();resetAgents();$('screenMode').textContent=mode.includes('DEMO')?'DEMO / 固定脚本回放':'LIVE / 実行中';$('stamp').dataset.verdict='busy';$('screenVerdict').textContent='審議中';$('result').hidden=true;lastResult=null;calls=0;tokens=0;$('usage').textContent='';controller=new AbortController();setBusy(true);$('modeLabel').textContent=mode;$('status').textContent='三个单元正在接收同一提案。'; }
 $('startBtn').onclick=async()=>{
-  const proposal=$('proposal').value.trim();if(!proposal){$('status').textContent='请先填写明确提案。';return;}
+  if(busy||checking)return;
+  const proposal=$('proposal').value.trim();if(!proposal){showProposalFeedback('请先填写明确提案。');$('proposal').focus();return;}
+  $('proposalFeedback').hidden=true;checking=true;$('startBtn').disabled=true;$('startBtn').textContent='检查模型配置…';$('demoBtn').disabled=true;$('demoFromProposal').disabled=true;
+  try{
+    const config=await api('/api/config');
+    const missing=roles.filter(([id])=>!config[id]?.hasKey).map(([id])=>id);
+    if(missing.length){showProposalFeedback(`还没有配置模型 API Key（${missing.join('、')}）。先点击「去配置模型」，或选择无需密钥的演示回放。`,true);return;}
+  }catch(error){showProposalFeedback(readableError(error));return;}
+  finally{checking=false;$('startBtn').disabled=false;$('startBtn').textContent='确认提案并启动';$('demoBtn').disabled=false;$('demoFromProposal').disabled=false;}
   begin('真实会话 · LIVE');
   try {
-    const response=await fetch('/api/run',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({proposal,rule:$('rule').value}),signal:controller.signal});
+    const response=await fetch('/api/run',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({proposal,rule:$('rule').value}),signal:AbortSignal.any([controller.signal,AbortSignal.timeout(185000)])});
     if(!response.ok)throw new Error((await response.json()).error);
     const reader=response.body.getReader(), decoder=new TextDecoder();let pending='';
     while(true){const {value,done}=await reader.read();if(done)break;pending+=decoder.decode(value,{stream:true});let end;while((end=pending.indexOf('\n'))>=0){const line=pending.slice(0,end);pending=pending.slice(end+1);if(line)handle(JSON.parse(line));}}
     if(!lastResult)throw new Error('连接中断，未收到完整裁决。');
-  }catch(error){$('status').textContent=error.name==='AbortError'?'运行已取消。已产生的调用可能仍计费。':error.message;$('phaseLabel').textContent='SESSION INTERRUPTED';$('screenVerdict').textContent='中断';roles.forEach(([id])=>{if($(`core-${id}`).dataset.state==='busy')$(`core-${id}`).dataset.state='failed';});}
+  }catch(error){const message=error.name==='AbortError'?'运行已取消。已产生的调用可能仍计费。':readableError(error);$('status').textContent=message;$('phaseLabel').textContent='SESSION INTERRUPTED';$('screenVerdict').textContent='中断';$('screenMode').textContent='LIVE / 已中断';roles.forEach(([id])=>{if($(`core-${id}`).dataset.state==='busy')$(`core-${id}`).dataset.state='failed';});if(error.name!=='AbortError')showProposalFeedback(message);}
   finally{setBusy(false);}
 };
 const demo=[
@@ -69,6 +94,7 @@ const demo=[
 ];
 function delay(ms,signal){return new Promise((resolve,reject)=>{const abort=()=>{clearTimeout(timer);reject(new DOMException('Cancelled','AbortError'));};const timer=setTimeout(()=>{signal.removeEventListener('abort',abort);resolve();},ms);signal.addEventListener('abort',abort,{once:true});});}
 $('demoBtn').onclick=async()=>{
+  if(busy||checking)return;
   const proposal='未来两周，先开发没有语音功能的 MAGI 最小版本。';$('proposal').value=proposal;$('rule').value='majority';begin('固定脚本回放 · DEMO');
   $('status').textContent='正在播放预设脚本。不会调用模型，也不分析自定义问题。';
   const final=structuredClone(demo);final[2].summary='仍保留反对票：我理解控制范围的必要，但希望先把视觉记忆点写进验收。';
@@ -88,13 +114,25 @@ $('exportBtn').onclick=()=>{
   const url=URL.createObjectURL(new Blob([text],{type:'text/markdown;charset=utf-8'}));const link=element('a');link.href=url;link.download=`magi-${r.demo?'demo':'live'}-${Date.now()}.md`;link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
 };
 $('settingsBtn').onclick=async()=>{
-  $('settings').showModal();$('configFields').replaceChildren();$('configStatus').textContent='加载配置…';
-  try{const config=await api('/api/config');for(const [id,,title] of roles){const field=element('fieldset');field.append(element('legend',`${id} / ${title}`));const grid=element('div',undefined,'config-grid');for(const [key,label,type] of [['baseUrl','Base URL','url'],['model','模型 ID','text'],['key',config[id].hasKey?'API Key · 已配置（留空保留）':'API Key · 未配置','password']]){const wrap=element('label',label),input=element('input');input.type=type;input.name=`${id}.${key}`;input.value=key==='key'?'':config[id][key];input.autocomplete='off';if(key!=='key')input.required=true;wrap.append(input);grid.append(wrap);}field.append(grid);const test=element('button','保存后测试连接');test.type='button';test.onclick=async()=>{test.disabled=true;try{await saveConfig();await api('/api/test',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({role:id})});$('configStatus').textContent=`${id} 连接成功（产生一次真实调用）。`;}catch(e){$('configStatus').textContent=e.message;}finally{test.disabled=false;}};field.append(test);$('configFields').append(field);}$('configStatus').textContent='连接测试会产生一次真实模型调用。';}catch(e){$('configStatus').textContent=e.message;}
+  $('proposalDialog').close();$('detailsDialog').close();$('settings').showModal();$('configFields').replaceChildren();$('copyConnection').disabled=true;$('configStatus').textContent='加载配置…';
+  try{const config=await api('/api/config');for(const [id,,title] of roles){const field=element('fieldset');field.append(element('legend',`${id} / ${title}`));const grid=element('div',undefined,'config-grid');for(const [key,label,type] of [['baseUrl','Base URL','url'],['model','模型 ID','text'],['key',config[id].hasKey?'API Key · 已配置（留空保留）':'API Key · 未配置','password']]){const wrap=element('label',label),input=element('input');input.type=type;input.name=`${id}.${key}`;input.value=key==='key'?'':config[id][key];input.autocomplete='off';if(key!=='key')input.required=true;wrap.append(input);grid.append(wrap);}field.append(grid);const test=element('button','保存后测试连接');test.type='button';test.onclick=async()=>{test.disabled=true;try{await saveConfig();await api('/api/test',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({role:id})});$('configStatus').textContent=`${id} 连接成功（产生一次真实调用）。`;}catch(e){$('configStatus').textContent=e.message;}finally{test.disabled=false;}};field.append(test);$('configFields').append(field);}$('copyConnection').disabled=false;$('configStatus').textContent='连接测试会产生一次真实模型调用。';}catch(e){$('configStatus').textContent=e.message;}
 };
 async function saveConfig(){const form=new FormData($('configForm')),payload={};for(const [id] of roles)payload[id]=Object.fromEntries(['baseUrl','model','key'].map(k=>[k,form.get(`${id}.${k}`)]));await api('/api/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});document.querySelectorAll('input[type=password]').forEach(input=>{input.value='';});}
-$('configForm').onsubmit=async event=>{event.preventDefault();try{await saveConfig();$('configStatus').textContent='已保存到本机服务内存。重启后恢复 .env 设置。';}catch(e){$('configStatus').textContent=e.message;}};
+$('configForm').onsubmit=async event=>{
+  event.preventDefault();
+  const submit=event.submitter;if(submit)submit.disabled=true;
+  try{
+    await saveConfig();const config=await api('/api/config');
+    const missing=roles.filter(([id])=>!config[id]?.hasKey).map(([id])=>id);
+    for(const [id] of roles){const input=$('configForm').elements.namedItem(`${id}.key`);input.parentElement.firstChild.textContent=config[id].hasKey?'API Key · 已配置（留空保留）':'API Key · 未配置';}
+    if(missing.length){$('configStatus').textContent=`设置已保存，但 ${missing.join('、')} 还缺少 API Key，暂时无法真实运行。`;return;}
+    $('configStatus').textContent='已保存到本机服务内存。重启后恢复 .env 设置。';
+    if(returnToProposal){$('proposalFeedback').hidden=true;$('settings').close();$('status').textContent='模型配置已保存。现在可以确认提案并启动。';}
+  }catch(e){$('configStatus').textContent=readableError(e);}
+  finally{if(submit)submit.disabled=false;}
+};
 $('closeSettings').onclick=()=>{$('settings').close();document.querySelectorAll('input[type=password]').forEach(input=>{input.value='';});};
-const openProposal=()=>$('proposalDialog').showModal();
+const openProposal=()=>{if(!$('proposalDialog').open)$('proposalDialog').showModal();};
 const openDetails=()=>$('detailsDialog').showModal();
 $('proposalBtn').onclick=openProposal;$('proposalTrigger').onclick=openProposal;
 $('detailsBtn').onclick=openDetails;$('resolutionTrigger').onclick=openDetails;
@@ -102,4 +140,13 @@ for(const id of ['proposalTrigger','resolutionTrigger',...roles.map(([id])=>`cor
 roles.forEach(([id])=>$(`core-${id}`).onclick=()=>{openDetails();$(id).scrollIntoView({block:'nearest'});});
 document.querySelectorAll('[data-close]').forEach(button=>button.onclick=()=>$(button.dataset.close).close());
 $('fullscreenBtn').onclick=async()=>{try{if(document.fullscreenElement)await document.exitFullscreen();else await document.documentElement.requestFullscreen();}catch{$('status').textContent='浏览器不支持全屏，请使用浏览器全屏快捷键。';}};
+$('configureFromProposal').onclick=()=>{returnToProposal=true;$('settingsBtn').click();};
+$('demoFromProposal').onclick=()=>$('demoBtn').click();
+$('copyConnection').onclick=()=>{
+  const form=$('configForm'),source=Object.fromEntries(['baseUrl','model','key'].map(key=>[key,form.elements.namedItem(`MELCHIOR.${key}`).value]));
+  if(!source.key.trim()){$('configStatus').textContent='请先在 MELCHIOR 输入 API Key 再复制；已保存的密钥不会回显。';return;}
+  for(const [id] of roles.slice(1))for(const key of ['baseUrl','model','key'])form.elements.namedItem(`${id}.${key}`).value=source[key];
+  $('configStatus').textContent='已将第一组的地址、模型和 Key 复制到三个单元。请点击保存配置。';
+};
+$('settings').addEventListener('close',()=>{if(returnToProposal){returnToProposal=false;openProposal();}});
 resetAgents();

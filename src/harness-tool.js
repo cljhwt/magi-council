@@ -26,7 +26,7 @@ export function magiToolOptions({ invokeFactory, disposeSignal }) {
 export function envInvokeFactory(usage) {
   const configs = Object.fromEntries(roles.map(role => [role.id, {
     baseUrl: process.env[`MAGI_${role.id}_BASE_URL`] || process.env.MODEL_BASE_URL || 'https://api.deepseek.com',
-    model: process.env[`MAGI_${role.id}_MODEL`] || process.env.MODEL_ID || 'deepseek-chat',
+    model: process.env[`MAGI_${role.id}_MODEL`] || process.env.MODEL_ID || 'deepseek-flash',
     key: process.env[`MAGI_${role.id}_API_KEY`] || process.env.MODEL_API_KEY || '',
   }]));
   if (roles.some(role => !configs[role.id].key)) throw new Error('请在 Harness 进程环境中配置 MAGI 模型密钥');

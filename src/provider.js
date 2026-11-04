@@ -6,12 +6,18 @@ export function normalizeBase(value) {
 export async function completion(config, messages, signal) {
   const base = normalizeBase(config.baseUrl);
   if (!config.key || !config.model) throw new Error('请配置模型名称和 API Key');
+  // Official DeepSeek enables long thinking by default. These short council
+  // responses use non-thinking mode so the output budget reaches the answer.
+  const deepseek = new URL(base).hostname === 'api.deepseek.com' && /^deepseek-/.test(config.model);
   const response = await fetch(`${base}/chat/completions`, {
     method: 'POST', signal: AbortSignal.any([signal ?? new AbortController().signal, AbortSignal.timeout(60000)]),
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${config.key}` },
-    body: JSON.stringify({ model: config.model, messages, max_tokens: 1200, stream: false }),
+    body: JSON.stringify({ model: config.model, messages, max_tokens: 1200, stream: false, ...(deepseek ? { thinking: { type: 'disabled' } } : {}) }),
   });
-  if (!response.ok) throw new Error(`模型服务请求失败（HTTP ${response.status}）`);
+  if (!response.ok) {
+    const hint = {401:'API Key 无效，请重新检查密钥',402:'模型账户余额不足，请检查 API 账户余额',403:'没有调用权限，请检查账户与模型权限',404:'找不到模型或接口，请检查模型 ID 和 Base URL',429:'请求过于频繁，请稍后重试'}[response.status];
+    throw new Error(`${hint || '模型服务请求失败'}（HTTP ${response.status}）`);
+  }
   const data = await response.json();
   const content = data.choices?.[0]?.message?.content;
   if (typeof content !== 'string') throw new Error('模型未返回文本内容');

@@ -5,7 +5,7 @@ import { deliberate, roles } from './core.js';
 import { completion, createInvoker, normalizeBase } from './provider.js';
 
 const port = Number(process.env.PORT || 3088);
-const configs = Object.fromEntries(roles.map(r => [r.id, { baseUrl: process.env.MODEL_BASE_URL || 'https://api.deepseek.com', model: process.env.MODEL_ID || 'deepseek-chat', key: process.env.MODEL_API_KEY || '' }]));
+const configs = Object.fromEntries(roles.map(r => [r.id, { baseUrl: process.env.MODEL_BASE_URL || 'https://api.deepseek.com', model: process.env.MODEL_ID || 'deepseek-flash', key: process.env.MODEL_API_KEY || '' }]));
 const publicRoot = fileURLToPath(new URL('../public/', import.meta.url));
 async function body(req) {
   const chunks = []; let length = 0;
