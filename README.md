@@ -2,11 +2,11 @@
 
 三个独立视角。一次有限讨论。看见共识，也保留反对票。
 
-受 EVA MAGI 启发的非官方开源实验。原创终端界面，不含原作截图、音轨或语音功能。
+受 EVA MAGI 启发的非官方开源实验。主屏按经典「提訴／決議」画面重绘：上方 BALTHASAR、左下 CASPER、右下 MELCHIOR，青色多边形与橙色连接线。输入、模型配置和意见详情收进弹窗。不含原作截图、音轨或语音功能。
 
-![MAGI Council demo](output/playwright/desktop.png)
+![MAGI Council classic screen](output/playwright/anime-desktop.png)
 
-[无声操作演示](output/playwright/magi-walkthrough.webm) · [验证记录](docs/VALIDATION.md) · [发布文案](docs/LAUNCH.md)
+[无声操作演示](output/playwright/magi-classic.webm) · [验证记录](docs/VALIDATION.md) · [发布文案](docs/LAUNCH.md)
 
 开发预览版：程序与模拟 Provider 通路已验证；真实模型效果仍需自备 Key 验收。可选 [Harness 工具适配](docs/HARNESS.md) 已实现，尚未完成宿主完整生命周期验收。
 
@@ -18,7 +18,9 @@
 npm start
 ```
 
-打开 http://127.0.0.1:3088。点击“体验演示回放”无需 API Key；回放是固定脚本，不会分析自定义问题。
+打开 http://127.0.0.1:3088。点击“演示回放”无需 API Key；回放是固定脚本，不会分析自定义问题。
+
+主屏点击「提訴」输入提案，点击「決議」或任意单元打开意见详情。底部操作栏提供演示回放、模型配置与全屏；单元颜色随真实投票更新，回放始终标记 DEMO。
 
 真实运行：在“模型配置”中为三个单元填写 Chat Completions 兼容 API 地址、模型名称和 Key。也可以将 `.env.example` 复制为 `.env` 填写默认配置。DeepSeek 默认地址是 `https://api.deepseek.com`；其他兼容服务通常需要 `/v1` 前缀。服务会追加 `/chat/completions`。
 

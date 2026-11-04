@@ -7,6 +7,7 @@ function element(tag, text, className) { const el = document.createElement(tag);
 function resetAgents() {
   $('agents').replaceChildren();
   for (const [id,number,title,focus] of roles) {
+    $(`core-${id}`).removeAttribute('data-vote');$(`core-${id}`).removeAttribute('data-state');
     const card = element('article', undefined, 'agent'); card.id = id;
     const top = element('div',undefined,'agent-top'); top.append(element('span',number,'agent-number'), element('span','待机','badge'));
     card.append(top,element('p',id,'agent-id'),element('h3',title),element('p',focus,'focus'),element('div','等待提案。\n独立判断之后，再听听其他人的意见。','empty'));
@@ -18,6 +19,7 @@ function setBusy(value) {
   $('cancelBtn').hidden = !value;
 }
 function showOpinion(id, opinion, phase) {
+  $(`core-${id}`).dataset.vote=opinion.vote;$(`core-${id}`).dataset.state='done';
   const card = $(id); card.dataset.vote = opinion.vote; card.dataset.state = 'done';
   card.querySelector('.badge').textContent = `${phase === 'review' ? '终票' : '初票'} · ${names[opinion.vote]}`;
   card.querySelector('.empty')?.remove(); card.querySelector('.opinion')?.remove(); card.querySelector('details')?.remove();
@@ -27,6 +29,8 @@ function showOpinion(id, opinion, phase) {
   card.append(details);
 }
 function handle(event) {
+  if(event.type==='agent.started')$(`core-${event.role}`).dataset.state='busy';
+  if(event.type==='agent.failed')$(`core-${event.role}`).dataset.state='failed';
   if (event.type === 'agent.started') { const card=$(event.role); card.dataset.state='busy';card.querySelector('.badge').textContent=event.phase==='review'?'互评中…':'独立评估中…';$('phaseLabel').textContent=event.phase==='review'?'ROUND 02 / PEER REVIEW':'ROUND 01 / INDEPENDENT'; }
   if (event.type === 'agent.completed') showOpinion(event.role,event.opinion,event.phase);
   if (event.type === 'agent.failed') { const card=$(event.role);card.dataset.state='failed';card.querySelector('.badge').textContent='故障';card.querySelector('.empty')?.remove();card.append(element('p',event.error,'opinion')); }
@@ -36,6 +40,7 @@ function handle(event) {
 }
 function renderResult(result) {
   lastResult=result; $('result').hidden=false;$('verdict').textContent=verdicts[result.verdict];
+  $('stamp').dataset.verdict=result.verdict;$('screenVerdict').textContent={APPROVED:'承認',REJECTED:'否決',DEFERRED:'保留',INCOMPLETE:'未完了'}[result.verdict];
   $('resultMeta').textContent=`${result.demo?'预设演示回放':'真实模型会话'} / ${result.rule==='majority'?'多数决':'全票通过'} / 未联网验证`;
   $('resultProposal').textContent=result.proposal;
   const valid=result.opinions.filter(Boolean);$('voteCount').textContent=`${valid.filter(o=>o.vote==='APPROVE').length} / 3`;
@@ -44,7 +49,7 @@ function renderResult(result) {
   $('phaseLabel').textContent='SESSION COMPLETE';$('status').textContent=result.demo?'回放结束。以上是固定脚本，不是对输入问题的实时回答。':'讨论结束。可以展开各方依据，或导出本次结果。';
 }
 async function api(path, options={}) { const response=await fetch(path,options);const data=await response.json();if(!response.ok)throw new Error(data.error||'请求失败');return data; }
-function begin(mode) { resetAgents();$('result').hidden=true;lastResult=null;calls=0;tokens=0;$('usage').textContent='';controller=new AbortController();setBusy(true);$('modeLabel').textContent=mode;$('status').textContent='三个单元正在接收同一提案。'; }
+function begin(mode) { $('proposalDialog').close();$('detailsDialog').close();resetAgents();$('screenMode').textContent=mode.includes('DEMO')?'DEMO / 固定脚本回放':'LIVE / 実行中';$('stamp').dataset.verdict='busy';$('screenVerdict').textContent='審議中';$('result').hidden=true;lastResult=null;calls=0;tokens=0;$('usage').textContent='';controller=new AbortController();setBusy(true);$('modeLabel').textContent=mode;$('status').textContent='三个单元正在接收同一提案。'; }
 $('startBtn').onclick=async()=>{
   const proposal=$('proposal').value.trim();if(!proposal){$('status').textContent='请先填写明确提案。';return;}
   begin('真实会话 · LIVE');
@@ -54,7 +59,7 @@ $('startBtn').onclick=async()=>{
     const reader=response.body.getReader(), decoder=new TextDecoder();let pending='';
     while(true){const {value,done}=await reader.read();if(done)break;pending+=decoder.decode(value,{stream:true});let end;while((end=pending.indexOf('\n'))>=0){const line=pending.slice(0,end);pending=pending.slice(end+1);if(line)handle(JSON.parse(line));}}
     if(!lastResult)throw new Error('连接中断，未收到完整裁决。');
-  }catch(error){$('status').textContent=error.name==='AbortError'?'运行已取消。已产生的调用可能仍计费。':error.message;$('phaseLabel').textContent='SESSION INTERRUPTED';}
+  }catch(error){$('status').textContent=error.name==='AbortError'?'运行已取消。已产生的调用可能仍计费。':error.message;$('phaseLabel').textContent='SESSION INTERRUPTED';$('screenVerdict').textContent='中断';roles.forEach(([id])=>{if($(`core-${id}`).dataset.state==='busy')$(`core-${id}`).dataset.state='failed';});}
   finally{setBusy(false);}
 };
 const demo=[
@@ -68,7 +73,7 @@ $('demoBtn').onclick=async()=>{
   $('status').textContent='正在播放预设脚本。不会调用模型，也不分析自定义问题。';
   const final=structuredClone(demo);final[2].summary='仍保留反对票：我理解控制范围的必要，但希望先把视觉记忆点写进验收。';
   try {for(const phase of ['independent','review']) {for(const [id] of roles)handle({type:'agent.started',role:id,phase});for(let i=0;i<3;i++){await delay(650,controller.signal);const opinion=phase==='review'?final[i]:demo[i];handle({type:'agent.completed',role:roles[i][0],phase,opinion});}}renderResult({proposal,rule:'majority',first:demo,opinions:final,verdict:'APPROVED',demo:true});}
-  catch{$('status').textContent='演示回放已停止。';$('phaseLabel').textContent='REPLAY STOPPED';}finally{setBusy(false);}
+  catch{$('status').textContent='演示回放已停止。';$('phaseLabel').textContent='REPLAY STOPPED';$('screenVerdict').textContent='中断';roles.forEach(([id])=>{if($(`core-${id}`).dataset.state==='busy')$(`core-${id}`).dataset.state='failed';});}finally{setBusy(false);}
 };
 $('cancelBtn').onclick=()=>controller?.abort();
 document.querySelectorAll('[data-example]').forEach(button=>button.onclick=()=>{if(!busy)$('proposal').value=button.dataset.example;});
@@ -89,4 +94,12 @@ $('settingsBtn').onclick=async()=>{
 async function saveConfig(){const form=new FormData($('configForm')),payload={};for(const [id] of roles)payload[id]=Object.fromEntries(['baseUrl','model','key'].map(k=>[k,form.get(`${id}.${k}`)]));await api('/api/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});document.querySelectorAll('input[type=password]').forEach(input=>{input.value='';});}
 $('configForm').onsubmit=async event=>{event.preventDefault();try{await saveConfig();$('configStatus').textContent='已保存到本机服务内存。重启后恢复 .env 设置。';}catch(e){$('configStatus').textContent=e.message;}};
 $('closeSettings').onclick=()=>{$('settings').close();document.querySelectorAll('input[type=password]').forEach(input=>{input.value='';});};
+const openProposal=()=>$('proposalDialog').showModal();
+const openDetails=()=>$('detailsDialog').showModal();
+$('proposalBtn').onclick=openProposal;$('proposalTrigger').onclick=openProposal;
+$('detailsBtn').onclick=openDetails;$('resolutionTrigger').onclick=openDetails;
+for(const id of ['proposalTrigger','resolutionTrigger',...roles.map(([id])=>`core-${id}`)])$(id).addEventListener('keydown',event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();$(id).dispatchEvent(new Event('click'));}});
+roles.forEach(([id])=>$(`core-${id}`).onclick=()=>{openDetails();$(id).scrollIntoView({block:'nearest'});});
+document.querySelectorAll('[data-close]').forEach(button=>button.onclick=()=>$(button.dataset.close).close());
+$('fullscreenBtn').onclick=async()=>{try{if(document.fullscreenElement)await document.exitFullscreen();else await document.documentElement.requestFullscreen();}catch{$('status').textContent='浏览器不支持全屏，请使用浏览器全屏快捷键。';}};
 resetAgents();

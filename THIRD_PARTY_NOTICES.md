@@ -2,7 +2,7 @@
 
 Web application runtime: Node.js built-in APIs only; no bundled third-party JavaScript libraries.
 
-All UI graphics are authored with HTML/CSS, using system fonts. No EVA screenshots, NERV logos, music, voice recordings, or external font files are included.
+The classic MAGI layout is recreated as interactive SVG with system fonts, based on the anime's screen composition. No EVA screenshots, NERV logos, music, voice recordings, or external font files are included. See docs/UI-REFERENCE.md for reference sources and fidelity limits.
 
 EVA, MAGI, MELCHIOR, BALTHASAR, CASPER and associated fictional settings belong to their respective owners. This is an unofficial fan-inspired software experiment, not an endorsed product.
 

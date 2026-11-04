@@ -4,3 +4,4 @@ coverage/
 *.log
 .playwright-cli/
 output/playwright/video-check.png
+output/reference/
