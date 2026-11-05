@@ -3,13 +3,14 @@ import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { deliberate, roles } from './core.js';
 import { completion, createInvoker, normalizeBase } from './provider.js';
+import { normalizeContext } from './context.js';
 
 const port = Number(process.env.PORT || 3088);
 const configs = Object.fromEntries(roles.map(r => [r.id, { baseUrl: process.env.MODEL_BASE_URL || 'https://api.deepseek.com', model: process.env.MODEL_ID || 'deepseek-flash', key: process.env.MODEL_API_KEY || '' }]));
 const publicRoot = fileURLToPath(new URL('../public/', import.meta.url));
 async function body(req) {
   const chunks = []; let length = 0;
-  for await (const chunk of req) { length += chunk.length; if (length > 40000) throw new Error('请求内容过长'); chunks.push(chunk); }
+  for await (const chunk of req) { length += chunk.length; if (length > 128000) throw new Error('请求内容过长'); chunks.push(chunk); }
   return JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}');
 }
 function json(res, status, data) { res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(data)); }
@@ -38,7 +39,8 @@ const server = http.createServer(async (req, res) => {
       return json(res, 200, { ok: true });
     }
     if (req.url === '/api/run' && req.method === 'POST') {
-      const { proposal, rule } = await body(req);
+      const { proposal, rule, decisionContext: inputContext } = await body(req);
+      const decisionContext = normalizeContext(inputContext);
       if (typeof proposal !== 'string' || !proposal.trim() || proposal.length > 6000) throw new Error('提案需要 1–6000 个字符');
       if (!['majority', 'unanimous'].includes(rule)) throw new Error('未知表决规则');
       if (roles.some(r => !configs[r.id].key)) throw new Error('请先为三个单元配置 API Key，或使用演示回放');
@@ -49,7 +51,7 @@ const server = http.createServer(async (req, res) => {
       const emit = event => { if (!res.destroyed) res.write(JSON.stringify({ ...event, at: Date.now() }) + '\n'); };
       emit({ type: 'run.started', id: crypto.randomUUID(), mode: 'live' });
       const snapshot = structuredClone(configs);
-      try { await deliberate({ proposal: proposal.trim(), rule, invoke: createInvoker(snapshot, data => emit({ type: 'usage', ...data })), emit: event => emit(event.type === 'run.completed' ? { ...event, result: { ...event.result, mode: 'live', promptVersion: '1', models: Object.fromEntries(roles.map(role => [role.id, snapshot[role.id].model])) } } : event), signal: controller.signal }); }
+      try { await deliberate({ proposal: proposal.trim(), rule, decisionContext, invoke: createInvoker(snapshot, data => emit({ type: 'usage', ...data })), emit: event => emit(event.type === 'run.completed' ? { ...event, result: { ...event.result, mode: 'live', promptVersion: '2', models: Object.fromEntries(roles.map(role => [role.id, snapshot[role.id].model])) } } : event), signal: controller.signal }); }
       catch (error) { emit({ type: 'run.failed', error: controller.signal.aborted ? '运行已取消或超时' : error.message }); }
       finally { clearTimeout(timer); res.end(); }
       return;

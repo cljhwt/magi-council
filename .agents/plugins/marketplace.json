@@ -1,0 +1,10 @@
+{
+  "name": "magi-local",
+  "interface": { "displayName": "MAGI Council" },
+  "plugins": [{
+    "name": "magi-council",
+    "source": { "source": "local", "path": "./plugins/magi-council" },
+    "policy": { "installation": "AVAILABLE", "authentication": "ON_INSTALL" },
+    "category": "Productivity"
+  }]
+}

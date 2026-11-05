@@ -1,0 +1,6 @@
+{
+  "name": "magi-council",
+  "version": "0.2.0-preview.1",
+  "description": "Use current conversation context and sourced project memory for MAGI deliberation.",
+  "skills": "./skills/"
+}

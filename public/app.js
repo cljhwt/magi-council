@@ -54,7 +54,9 @@ function handle(event) {
 function renderResult(result) {
   lastResult=result; $('result').hidden=false;$('verdict').textContent=verdicts[result.verdict];
   $('stamp').dataset.verdict=result.verdict;$('screenVerdict').textContent={APPROVED:'承認',REJECTED:'否決',DEFERRED:'保留',INCOMPLETE:'未完了'}[result.verdict];
-  $('resultMeta').textContent=`${result.demo?'预设演示回放':'真实模型会话'} / ${result.rule==='majority'?'多数决':'全票通过'} / 未联网验证`;
+  $('resultMeta').textContent=`${result.demo?'预设演示回放':'真实模型会话'} / ${result.rule==='majority'?'多数决':'全票通过'} / ${result.decisionContext?'已提供任务背景':'未提供会话背景'} / 未联网验证`;
+  if(!$('contextRecord')){const contextRecord=element('p',undefined,'note');contextRecord.id='contextRecord';$('minority').before(contextRecord);}
+  $('contextRecord').textContent=result.decisionContext?`背景来源：${result.decisionContext.host||'调用方'}；${result.decisionContext.facts.length} 条有来源事实；未知项：${result.decisionContext.unknowns.join('；')||'未列出'}。摘要与来源仍需核验。`:'本次没有读取 Agent 会话记忆，仅根据提案进行判断。';
   $('resultProposal').textContent=result.proposal;
   const valid=result.opinions.filter(Boolean);$('voteCount').textContent=`${valid.filter(o=>o.vote==='APPROVE').length} / 3`;
   $('minority').replaceChildren(element('p','各方意见与下一步'));
@@ -107,6 +109,7 @@ $('exportBtn').onclick=()=>{
   if(!lastResult)return;const r=lastResult;
   let text=`# MAGI Council 合议记录\n\n模式：${r.demo?'固定脚本演示回放':'真实模型会话'}\n\n提案：${r.proposal}\n\n规则：${r.rule==='majority'?'多数决':'全票通过'}\n\n结果：${verdicts[r.verdict]}\n\n提示词版本：${r.promptVersion || '1'}\n\n未联网验证；意见一致不等于事实正确。\n`;
   if(r.models)text+=`\n模型：${roles.map(([id])=>`${id}: ${r.models[id]}`).join(' / ')}\n`;
+  if(r.decisionContext){const c=r.decisionContext;text+=`\n## 本次任务背景\n\n${c.summary||''}\n\n${c.facts.map(f=>`- ${f.text}（来源：${f.source}）`).join('\n')}\n\n约束：${c.constraints.join('；')}\n\n已有决定：${c.decisions.join('；')}\n\n未知：${c.unknowns.join('；')}\n`;}
   text+='\n## 首轮独立意见\n';
   r.first?.forEach((o,i)=>{text+=`\n### ${roles[i][0]}\n\n${o?`${names[o.vote]}：${o.summary}\n\n依据：${o.evidence}\n\n风险：${o.risks}\n\n条件：${o.condition}`:'没有有效首轮意见'}\n`;});
   text+='\n## 终轮意见\n';

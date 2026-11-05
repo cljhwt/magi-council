@@ -22,4 +22,6 @@ pnpm dsh web --patch /absolute/path/to/magi-overlay.yml
 
 让宿主使用 `magi_deliberate` 工具评估用户已确认的提案。最多六次独立模型调用，180 秒时限；接收宿主取消信号，插件卸载也会取消进行中的运行。不使用自动重试。
 
+v0.2 起，`context_json` 是必填参数：由宿主 Agent 根据当前可见对话和项目记忆整理 `summary`、有来源的 `facts`、`constraints`、`decisions`、`unknowns`。缺少背景不会启动模型调用；用户不需要自己填写 JSON。此适配不直接抓取宿主内部会话数据库，调用方需要显式传入背景。格式与数据边界见 [AGENT-CONTEXT.md](AGENT-CONTEXT.md)。
+
 发布前仍需在目标宿主真实验证安装、工具调用、取消、重启和卸载；未完成这些检查前不要宣传为已上架插件。

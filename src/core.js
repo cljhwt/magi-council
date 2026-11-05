@@ -18,14 +18,14 @@ export function tally(opinions, rule = 'majority') {
   if (rule === 'unanimous') return yes === 3 ? 'APPROVED' : no > 0 ? 'REJECTED' : 'DEFERRED';
   return yes >= 2 ? 'APPROVED' : no >= 2 ? 'REJECTED' : 'DEFERRED';
 }
-export async function deliberate({ proposal, rule, invoke, emit, signal }) {
+export async function deliberate({ proposal, rule, invoke, emit, signal, decisionContext = null }) {
   const first = new Array(3).fill(null), final = new Array(3).fill(null);
   const check = () => signal?.throwIfAborted();
   const round = async (phase, target, context) => {
     await Promise.all(roles.map(async (role, index) => {
       check(); emit({ type: 'agent.started', role: role.id, phase });
       try {
-        const opinion = validateOpinion(await invoke(role, proposal, context, signal));
+        const opinion = validateOpinion(await invoke(role, proposal, context, signal, decisionContext));
         check(); target[index] = opinion;
         emit({ type: 'agent.completed', role: role.id, phase, opinion });
       } catch (error) {
@@ -36,6 +36,6 @@ export async function deliberate({ proposal, rule, invoke, emit, signal }) {
   await round('independent', first, null);
   check();
   if (first.every(Boolean)) await round('review', final, first.map((opinion, i) => ({ role: roles[i].id, ...opinion })));
-  const result = { proposal, rule, first, opinions: final, verdict: tally(final, rule), verified: false };
+  const result = { proposal, rule, first, opinions: final, verdict: tally(final, rule), verified: false, decisionContext, contextStatus: decisionContext ? 'provided' : 'missing' };
   check(); emit({ type: 'run.completed', result }); return result;
 }

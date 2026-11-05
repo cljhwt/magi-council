@@ -23,9 +23,11 @@ test('HTTP pipeline: config secrecy, six calls, isolation, failure and origin pr
   const config=Object.fromEntries(['MELCHIOR','BALTHASAR','CASPER'].map(id=>[id,{baseUrl:`http://127.0.0.1:${provider.address().port}`,model:'test-model',key:'fake-test-key'}]));
   assert.equal((await post('/api/config',config)).status,200);
   const visible=await (await fetch(base+'/api/config')).text();assert.ok(!visible.includes('fake-test-key'));assert.ok(visible.includes('hasKey'));
-  const response=await post('/api/run',{proposal:'应当先验证核心闭环。',rule:'majority'});
+  const response=await post('/api/run',{proposal:'应当先验证核心闭环。',rule:'majority',decisionContext:{host:'codex',facts:[{text:'本轮不做语音',source:'用户当前会话'}],unknowns:['预算未提供']}});
   const events=(await response.text()).trim().split('\n').map(JSON.parse);
   assert.equal(events.at(-1).result.verdict,'APPROVED');assert.equal(requests.length,6);
+  assert.equal(events.at(-1).result.contextStatus,'provided');
+  assert.ok(requests.every(r=>JSON.parse(r.messages[1].content).decisionContext.facts[0].source==='用户当前会话'));
   assert.ok(requests.slice(0,3).every(r=>JSON.parse(r.messages[1].content).peerOpinions===null));
   assert.ok(requests.slice(3).every(r=>JSON.parse(r.messages[1].content).peerOpinions.length===3));
   assert.ok(!JSON.stringify(events).includes('fake-test-key'));

@@ -1,1 +1,1 @@
-{"name":"magi-council","version":"0.1.2-preview.1","private":true,"type":"module","scripts":{"start":"node --env-file-if-exists=.env src/server.js","test":"node --test"},"engines":{"node":">=24"}}
+{"name":"magi-council","version":"0.2.0-preview.1","private":true,"type":"module","scripts":{"start":"node --env-file-if-exists=.env src/server.js","test":"node --test"},"engines":{"node":">=24"}}

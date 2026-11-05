@@ -1,0 +1,6 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "magi-council",
+  "version": "0.2.0-preview.1",
+  "description": "Use current agent context and sourced project memory for MAGI three-perspective deliberation."
+}
